@@ -1,0 +1,165 @@
+<html>
+	<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		<title>IH IF差价</title>
+    <script src="scripts/moment.js"></script>
+    <script src="scripts/moment-range.js"></script>
+    <script src="scripts/Chart.js"></script>
+    <script src="scripts/underscore-min.js"></script>
+	
+		<script src="scripts/c.js"></script> 
+	</head>
+	<body onload="connect();"> 
+    <div style="width:760px;height:365px">
+        <div>
+            <canvas id="chart1"></canvas>
+        </div>
+    </div>
+    <div style="width:760px;height:300px">
+        <div>
+            <canvas id="chart2"></canvas>
+        </div>
+    </div>
+
+<script>
+
+ function connect()
+ { 
+	if ("WebSocket" in window) 
+	{ 
+		ws = new WebSocket("ws://localhost:5000"); 
+		ws.binaryType = 'arraybuffer'; // using serialisation 
+		ws.onopen=function(e){ // on successful connection, we want to create an initial subscription to load all the data into the page 
+		    console.log("connected");
+			var query = {func:"sub",arg1:"IF1608.CFE",arg2:"IH1608.CFE"};
+			//var query = {func:"test",arg1:5,arg2:2};
+			ws.send(serialize(query));  
+		}; 
+		
+		ws.onclose=function(e){
+			console.log("disconnected");
+		};
+		
+		ws.onmessage=function(e){ // deserialise incoming messages 
+			//var d = deserialize(e.data); // messages should have format [‘function’,params] // call the function name with the parameters 
+			//window[d.shift()](d[0]);		
+			var values = deserialize(e.data);
+			//console.log("IH:"+d[1].rt_last);
+            if(values[0].dt != null) 
+				historyUpdate(values);
+            else
+			    //console.log(values[1][0].rt_last);
+			    timelyUpdate(values);
+		}; 
+		
+		ws.onerror=function(e){
+			console.log(e.data);
+		}; 
+	} 
+		else alert("WebSockets not supported on your browser."); 
+ } 
+
+  function historyUpdate(values)
+ { 
+			var IFValues = _.filter(values, function (item) { return item.windcode == "IF1608.CFE"; });
+			var IHValues = _.filter(values, function (item) { return item.windcode == "IH1608.CFE"; });
+			var DiffValues = _.filter(values, function (item) { return item.windcode == "DIFF"; });
+
+			myLineChart1.data.datasets[0].data = _.map(IFValues, function (item) { return item.close; });
+			myLineChart1.data.datasets[1].data = _.map(IHValues, function (item) { return item.close * 1.5; });
+			myLineChart2.data.datasets[0].data = _.map(DiffValues, function (item) { return item.close; });
+
+			myLineChart1.update();
+			myLineChart2.update();
+ }
+ 
+ function timelyUpdate(values)
+ { 
+	var DiffValues = values[1][0];
+	var IFValues = values[1][1];
+    var IHValues = values[1][2];
+
+    if (currentMinute == moment().minute()) {
+        var length = myLineChart1.data.datasets[0].data.length;
+        myLineChart1.data.datasets[0].data[length - 1] = IFValues.rt_last;
+        myLineChart1.data.datasets[1].data[length - 1] = IHValues.rt_last * 1.5;   
+		myLineChart2.data.datasets[0].data[length - 1] = DiffValues.rt_last;
+        myLineChart1.update();
+		myLineChart2.update();
+        
+        //console.log("in the current min:" + moment().minute());
+    } else {
+        myLineChart1.data.datasets[0].data.push(IFValues.rt_last);
+        myLineChart1.data.datasets[1].data.push(IHValues.rt_last * 1.5);
+		myLineChart2.data.datasets[0].data.push(DiffValues.rt_last);
+        myLineChart1.update();
+		myLineChart2.update();
+
+        //console.log("in the next min:" + moment().minute());
+        currentMinute = moment().minute();
+    }
+ }
+ 
+var currentMinute = moment().minute();
+var ctx1 = document.getElementById("chart1");
+var ctx2 = document.getElementById("chart2");
+
+var morning = "2016-07-21T09:30:00+08:00/2016-07-21T11:30:00+08:00";
+var afternoon = "2016-07-21T13:01:00+08:00/2016-07-21T15:00:00+08:00";
+var morningRange = moment.range(morning);
+var afternoonRange = moment.range(afternoon);
+var timeline = new Array();
+
+morningRange.by('minutes', function (moment) {
+    timeline.push(moment.format("h:mm:ss"));
+    
+});
+
+afternoonRange.by('minutes', function (moment) {
+    timeline.push(moment.format("h:mm:ss"));
+});
+
+var data = new Array();
+
+
+var myLineChart1 = new Chart(ctx1, {
+    type: 'line',
+    data: {
+        labels: timeline,
+        datasets : [
+				{
+				    label: "IF",
+				    fill: false,
+				    borderColor: "blue",
+				    pointRadius: 1,
+					data : data
+				},
+				{
+				    label: "IH",
+				    fill: false,
+				    borderColor: "green",
+				    pointRadius: 1,
+					data : data
+				}
+			],
+		}
+});
+
+var myLineChart2 = new Chart(ctx2, {
+    type: 'line',
+    data: {
+        labels: timeline,
+        datasets: [
+				{
+				    label: "差价",
+				    fill: false,
+				    borderColor: "red",
+				    pointRadius: 1,
+				    data: data
+				}
+        ],
+    }
+});
+</script>
+</body>
+</html>
